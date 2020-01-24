@@ -1,0 +1,141 @@
+{% extends "incubator/base.html" %}
+
+{% block content %}
+<div class='row'>
+    <div class="col-sm-12">
+        <div class="col-md-8">
+            <h1> Estufa 01 </h1>
+        </div>
+        <div class="col-sm-6">
+            <canvas id="co2Chart" width="100" height="100"></canvas>
+        </div>
+
+        <div class="col-sm-6">
+            <canvas id="tempChart" width="100" height="100"></canvas>
+        </div>
+
+    </div>
+</div>
+{% endblock content%}
+
+
+
+<script>
+    {% block jquery %}
+    var endpoint = '/api/estufa1/data/'
+    var co2_data = []
+    var temp_data = []
+
+    $.ajax({
+        method: "GET",
+        url: endpoint,
+        success: function (data) {
+            labels = data.labels
+            data_size = Object.keys(data).length
+            for (i = 0; i < data_size; i++) {
+                object_co2 = {"x":i, "y":data[i].co2}
+                co2_data.push(object_co2)
+                object_temp = {"x":i, "y":data[i].temperatura}
+                temp_data.push(object_temp)
+            }
+            setChart()
+        },
+
+        error: function (error_data) {
+            console.log("error")
+            console.log(error_data)
+        }
+    })
+
+    function setChart() {
+        var ctx = document.getElementById('co2Chart');
+        var ctx2 = document.getElementById('tempChart');
+
+        var co2Chart = new Chart(ctx, {
+            type: 'line',
+            data: {
+                datasets: [{
+                    label: 'CO2 (%)',
+                    data: co2_data,
+
+                    backgroundColor: [
+                        'rgba(35, 8, 8, 0.08)'
+                    ],
+                    borderColor: [
+                        'rgba(35, 8, 8, 1)'
+                    ],
+                    borderWidth: 1
+                }]
+            },
+
+            options: {
+                responsive: true,
+                title: {
+                    // optional: your title here
+                },
+                scales: {
+                    xAxes: [{
+                        type: 'linear', // MANDATORY TO SHOW YOUR POINTS! (THIS IS THE IMPORTANT BIT) 
+                        display: true, // mandatory
+                        scaleLabel: {
+                            display: true, // mandatory
+                            labelString: 'Your label' // optional 
+                        },
+                        yAxes: [{ // and your y axis customization as you see fit...
+                            display: true,
+                            scaleLabel: {
+                                display: true,
+                                labelString: 'Count'
+                            }
+                        }]
+                    }]
+                }
+            }
+        });
+
+        var tempChart = new Chart(ctx2, {
+            type: 'line',
+            data: {
+                datasets: [{
+                    label: 'Temperatura (C)',
+                    data: temp_data,
+                    backgroundColor: [
+                        'rgba(32, 8, 8, 0.08)'
+                    ],
+                    borderColor: [
+                        'rgba(32, 8, 8, 1)'
+                    ],
+                    borderWidth: 1
+                }]
+            },
+            options: {
+                responsive: true,
+                title: {
+                    // optional: your title here
+                },
+                scales: {
+                    xAxes: [{
+                        type: 'linear', // MANDATORY TO SHOW YOUR POINTS! (THIS IS THE IMPORTANT BIT) 
+                        display: true, // mandatory
+                        scaleLabel: {
+                            display: true, // mandatory
+                            labelString: 'Your label' // optional 
+                        },
+                        yAxes: [{ // and your y axis customization as you see fit...
+                            display: true,
+                            scaleLabel: {
+                                display: true,
+                                labelString: 'Count'
+                            }
+                        }]
+                    }]
+                }
+            }
+
+    });
+
+    }
+
+    {% endblock %}
+
+</script>

@@ -1,0 +1,24 @@
+Dificuldades e BUGS ao longo do desenvolvimento.
+
+As interrupções "one shot" utilizando o High precision TImer do esp32 não foram muito precisa, a lampada oscilava... Utilizar os hardware timer (Timer groups) resolveu o problema. Lampada permanece com brilho constante.
+
+ Quando utilizado o TIMER_0 do TIMER_GROUP_0 e o esp32 precisava reconectar no wifi o esp32 resetava, com uma mensagem de "Cache disabled but cached memory region accessed". Wifi utiliza o mesmo TImer?
+ Utilizar o TIMER_1 do TIMER_GROUP_0 não resolveu o problema anterior. Trocar o core em que função config_pins() é chamada e assim trocar o core em que as interrupções ocorrem também não resolveu o problema. 
+
+
+Testando TIMER_1 do TIMER_GROUP_1  PARECE FUNCIONAR IRMÃO!!!! Testar mais um pouco.. 
+    R: diminuiu a frequencia com que os erros ocorrem, mas não zerou... 
+
+Pino que causa a interrupção flutuando causaria o problema????
+ R: não deu certo...
+
+COMO NADA FUNCIONA A ULTIMA OPÇÃO É DESABILITAR AS INTERRUPÇÕES ENQUANTO CONECTAMOS AO WIFI.......  NÃO FUNCIONOU MEU PAI AMADO
+
+
+NÃO UTILIZAR O EVENT_GROUP DO WIFI NÃO RESOLVEU, POIS DESTA FORMA O WIFI NÃO CONECTA.......
+
+Mudar a forma pela qual eu faço o controle de tempo dos pulsos.....
+
+A forma correta é pré configurar os timers e a cada interrupção do zero cross setar o valor do disparo do timer...
+
+Porém, infelizmente, a API que acessa o GPIO não está na IRAM, e portanto, terei que acessar os pinos diretamente pelos registradores.....
