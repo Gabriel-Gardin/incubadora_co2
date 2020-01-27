@@ -18,6 +18,7 @@
 #include "freertos/event_groups.h"
 #include "esp_intr_alloc.h"
 #include "driver/gpio.h"
+#include "driver/adc.h"
 #include "tcpip_adapter.h"
 #include "lwip/sockets.h"
 #include "esp_http_client.h"
@@ -39,14 +40,15 @@ static const char *TAG = "wifi station";
 //PINOS
 #define INT_PIN 32
 #define D1_PIN 33
-#define VALV 27
+#define VALV_PIN 26
 #define FAN1 14
 #define FAN2 12
 #define SCL 22
 #define SDA 21
 #define TEMP_DATA 19
+#define CO2_ANALOG_PIN ADC_CHANNEL_6
 
-#define GPIO_OUTPUT_PIN_SEL ((1ULL<<VALV) | (1ULL<<FAN1)| (1ULL<<FAN2)| (1ULL<<D1_PIN))
+#define GPIO_OUTPUT_PIN_SEL ((1ULL<<VALV_PIN) | (1ULL<<FAN1)| (1ULL<<FAN2)| (1ULL<<D1_PIN))
 #define GPIO_INPUT_PIN_SEL ((1ULL<<TEMP_DATA) | (1ULL<<INT_PIN))
 #define ESP_INTR_FLAG_DEFAULT 0
 
@@ -66,13 +68,13 @@ timer_config_t config;
 //Configura os pinos
 void config_pins(void);
 
-//COnfigura o timer.
+//Configura o timer do dimmer.
 void set_timer(void);
 
-//INterrupção zero cross
+//Interrupção zero cross. Mantém a sincronia entre o timer do dimmer e a frequência da rede elétrica.
 static void IRAM_ATTR zero_cros(void *arg);
 
-
+//Aciona o GPIO após atingir o intervalo de tempo do timer, acionando o triac do dimmer.
 static void IRAM_ATTR dimmer_timer_callback(void* arg);
 
 // task que controla a temperatura.
@@ -84,11 +86,29 @@ void co2_task(void *pvParameters);
 //Task principal
 void main_task(void *pvParameters);
 
+//Abre a válvula de CO2 controlando o GPIO 27
+esp_err_t open_co2_valv(void);
+
+//Fecha a válvula de CO2 controlando oGPIO 27
+esp_err_t close_co2_valv(void);
+
+//Liga as ventoinhas internas. GPIO 12 e 14
+esp_err_t fans_on(void);
+
+//Desliga as ventoinhas internas. GPIO 12 e 14
+esp_err_t fans_off(void);
+
+//Lê e retorna a concentração de CO2 em % pela porta analógica do arduino.
+float get_co2_level();
+
+
 //Conecta ao wifi.
 void wifi_init(void);
 
+//Envia os dados para o Thinspeak. < https://thingspeak.com/channels/731711 >
 void send_data(float temp, float humity, float co2);
 
+//Wifi event handler.
 static void event_handler(void* arg, esp_event_base_t event_base, 
                                 int32_t event_id, void* event_data);
 

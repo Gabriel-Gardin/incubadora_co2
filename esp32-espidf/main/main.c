@@ -28,6 +28,7 @@ void app_main(void)
     set_timer();
 }
 
+
 void main_task(void *pvParameters)
 {
     begin_display();
@@ -46,30 +47,139 @@ void main_task(void *pvParameters)
     }
 }
 
+
 void temp_task(void *pvParameters)
 {
     unsigned int t0;
     for(;;)
     {
         dht_data data = get_temp_humity();
+        float co2_conc = get_co2_level();
         t0 = esp_timer_get_time();
-        vTaskDelay(pdMS_TO_TICKS(10000));
-        send_data(((float)(data.temperature)), ((float)(data.humity)), 35.0f);
+        vTaskDelay(pdMS_TO_TICKS(100000));
+        send_data(((float)(data.temperature)), ((float)(data.humity)), co2_conc);
         printf("Temp = %f, humity = %f\n", data.temperature, data.humity);
     }
 }
+
 
 void co2_task(void *pvParameters)
 {
     unsigned int t0;
     for(;;)
     {
-        vTaskDelay(pdMS_TO_TICKS(1000));
+        open_co2_valv();
+        fans_on();
+        vTaskDelay(pdMS_TO_TICKS(500));
+        get_co2_level();
+        close_co2_valv();
+        fans_off();
         printf("time passed3\n");
+        vTaskDelay(pdMS_TO_TICKS(500));
     }
 }
 
 
+float get_co2_level()
+{
+    int val = 0;
+    float voltage;
+    float co2_conc;
+
+    adc1_config_width(ADC_WIDTH_BIT_12);
+    adc1_config_channel_atten(CO2_ANALOG_PIN, ADC_ATTEN_DB_6); //Atenuação de 6dB. Leituras de 0 até 2.2V; Equivale a 0 - 4096.
+    for(int i = 0; i < 15; i++)
+    {
+        val += adc1_get_raw(CO2_ANALOG_PIN);
+        ets_delay_us(1);
+    }
+    
+    val = val/15; //Tira a média de 15 leituras do ADC.
+    voltage = ((val * 2.2) / 4095) - 0.130;  //Subtrai um valor empirico, próximo ao erro do ADC.
+    //printf("Read voltage is = %f\n", voltage);
+    
+    co2_conc =  ((voltage - 0.4) * 10) / 1.6;
+    return co2_conc;
+}
+
+
+esp_err_t open_co2_valv(void)
+{
+    return gpio_set_level(VALV_PIN, 1);
+}
+
+esp_err_t close_co2_valv(void)
+{
+    return gpio_set_level(VALV_PIN, 0);
+}
+
+esp_err_t fans_on(void)
+{
+    esp_err_t err1 = gpio_set_level(FAN1, 1);
+    esp_err_t err2 = gpio_set_level(FAN2, 1);
+    return err1 ? err1 : err2;
+}
+
+esp_err_t fans_off(void)
+{
+    esp_err_t err1 = gpio_set_level(FAN1, 0);
+    esp_err_t err2 = gpio_set_level(FAN2, 0);
+    return err1 ? err1 : err2;
+}
+
+
+void send_data(float temp, float humity, float co2)
+{
+
+    char url[110];
+    sprintf(url, "https://api.thingspeak.com/update?api_key=MMFBRWP4DEAR7FVR&field1=%f&field2=%f&field3=%f", co2, temp, humity);
+
+    esp_http_client_config_t config = {
+        .url =  url,
+    };
+
+    esp_http_client_handle_t client = esp_http_client_init(&config);
+    esp_err_t err = esp_http_client_perform(client);
+
+    if (err == ESP_OK) {
+        ESP_LOGI(TAG, "Status = %d, content_length = %d",
+                esp_http_client_get_status_code(client),
+                esp_http_client_get_content_length(client));
+    }
+    esp_http_client_cleanup(client);
+}
+
+
+//********************************************CONFIGURA OS GPIOS*******************************************
+void config_pins(void)
+{
+    gpio_config_t io_conf;  //Configura os pinos OUTPUT(ventoinhas e valvula CO2)
+    io_conf.intr_type    = GPIO_PIN_INTR_DISABLE;
+    io_conf.mode         = GPIO_MODE_OUTPUT;
+    io_conf.pin_bit_mask = GPIO_OUTPUT_PIN_SEL;
+    io_conf.pull_down_en = 0;
+    io_conf.pull_up_en   = 0;
+
+    gpio_config(&io_conf);
+
+    io_conf.intr_type    = GPIO_PIN_INTR_DISABLE;
+    io_conf.mode         = GPIO_MODE_INPUT;
+    io_conf.pin_bit_mask = GPIO_INPUT_PIN_SEL;
+    io_conf.pull_down_en = 0;
+    io_conf.pull_up_en   = 0;
+
+    gpio_config(&io_conf);
+    gpio_set_pull_mode(INT_PIN, GPIO_PULLUP_ONLY);
+
+    //change gpio intrrupt type for one pin
+    gpio_set_intr_type(INT_PIN, GPIO_INTR_NEGEDGE);
+    //install gpio isr service
+    gpio_install_isr_service(ESP_INTR_FLAG_DEFAULT);
+    //hook isr handler for specific gpio pin
+    gpio_isr_handler_add(INT_PIN, zero_cros, NULL);
+}
+
+//Inicia o wifi.
 void wifi_init(void)
 {
     s_wifi_event_group = xEventGroupCreate();
@@ -101,56 +211,26 @@ void wifi_init(void)
 }
 
 
-void config_pins(void)
+//Wifi event group.
+static void event_handler(void* arg, esp_event_base_t event_base, int32_t event_id, void* event_data)
 {
-    gpio_config_t io_conf;  //Configura os pinos OUTPUT(ventoinhas e valvula CO2)
-    io_conf.intr_type    = GPIO_PIN_INTR_DISABLE;
-    io_conf.mode         = GPIO_MODE_OUTPUT;
-    io_conf.pin_bit_mask = GPIO_OUTPUT_PIN_SEL;
-    io_conf.pull_down_en = 0;
-    io_conf.pull_up_en   = 0;
-
-    gpio_config(&io_conf);
-
-    io_conf.intr_type    = GPIO_PIN_INTR_DISABLE;
-    io_conf.mode         = GPIO_MODE_INPUT;
-    io_conf.pin_bit_mask = GPIO_INPUT_PIN_SEL;
-    io_conf.pull_down_en = 0;
-    io_conf.pull_up_en   = 0;
-
-    gpio_config(&io_conf);
-    gpio_set_pull_mode(INT_PIN, GPIO_PULLUP_ONLY);
-
-    //change gpio intrrupt type for one pin
-    gpio_set_intr_type(INT_PIN, GPIO_INTR_NEGEDGE);
-    //install gpio isr service
-    gpio_install_isr_service(ESP_INTR_FLAG_DEFAULT);
-    //hook isr handler for specific gpio pin
-    gpio_isr_handler_add(INT_PIN, zero_cros, NULL);
-}
-
-void send_data(float temp, float humity, float co2)
-{
-
-    char url[110];
-    sprintf(url, "https://api.thingspeak.com/update?api_key=MMFBRWP4DEAR7FVR&field1=%f&field2=%f&field3=%f", co2, temp, humity);
-
-    esp_http_client_config_t config = {
-        .url =  url,
-    };
-
-    esp_http_client_handle_t client = esp_http_client_init(&config);
-    esp_err_t err = esp_http_client_perform(client);
-
-    if (err == ESP_OK) {
-        ESP_LOGI(TAG, "Status = %d, content_length = %d",
-                esp_http_client_get_status_code(client),
-                esp_http_client_get_content_length(client));
+    if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_STA_START) {
+        esp_wifi_connect();
+    } else if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_STA_DISCONNECTED) {
+        if (s_retry_num < RECONECT_MAX_RETRY) {
+            esp_wifi_connect();
+            xEventGroupClearBits(s_wifi_event_group, WIFI_CONNECTED_BIT);
+            s_retry_num++;
+            ESP_LOGI(TAG, "retry to connect to the AP");
+        }
+        ESP_LOGI(TAG,"connect to the AP fail");
+    } else if (event_base == IP_EVENT && event_id == IP_EVENT_STA_GOT_IP) {
+        ip_event_got_ip_t* event = (ip_event_got_ip_t*) event_data;
+        ESP_LOGI(TAG, "got ip:" IPSTR, IP2STR(&event->ip_info.ip));
+        s_retry_num = 0;
+        xEventGroupSetBits(s_wifi_event_group, WIFI_CONNECTED_BIT);
     }
-    esp_http_client_cleanup(client);
 }
-
-
 
 //****************************************DIMMER****************************************
 void set_timer(void)
@@ -188,27 +268,3 @@ static void IRAM_ATTR dimmer_timer_callback(void* arg)
 }
 
 //**************************************FIM DIMMER **************************************************************
-
-
-
-
-//Wifi event handler.
-static void event_handler(void* arg, esp_event_base_t event_base, int32_t event_id, void* event_data)
-{
-    if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_STA_START) {
-        esp_wifi_connect();
-    } else if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_STA_DISCONNECTED) {
-        if (s_retry_num < RECONECT_MAX_RETRY) {
-            esp_wifi_connect();
-            xEventGroupClearBits(s_wifi_event_group, WIFI_CONNECTED_BIT);
-            s_retry_num++;
-            ESP_LOGI(TAG, "retry to connect to the AP");
-        }
-        ESP_LOGI(TAG,"connect to the AP fail");
-    } else if (event_base == IP_EVENT && event_id == IP_EVENT_STA_GOT_IP) {
-        ip_event_got_ip_t* event = (ip_event_got_ip_t*) event_data;
-        ESP_LOGI(TAG, "got ip:" IPSTR, IP2STR(&event->ip_info.ip));
-        s_retry_num = 0;
-        xEventGroupSetBits(s_wifi_event_group, WIFI_CONNECTED_BIT);
-    }
-}
