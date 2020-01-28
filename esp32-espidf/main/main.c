@@ -9,73 +9,56 @@
 
 int dimmer_delay_us = 6000;
 
+QueueHandle_t temp_queue;
+
 void app_main(void)
 {
     esp_err_t ret = nvs_flash_init();
+
     if (ret == ESP_ERR_NVS_NO_FREE_PAGES || ret == ESP_ERR_NVS_NEW_VERSION_FOUND) {
       ESP_ERROR_CHECK(nvs_flash_erase());
       ret = nvs_flash_init();
     }
-    
     ESP_ERROR_CHECK(ret);
     wifi_init();
-
-    xTaskCreatePinnedToCore(main_task, "main_task", 4096, NULL, 0, NULL, 1);
-    xTaskCreatePinnedToCore(temp_task, "temp_task", 4096, NULL, 0, NULL, 1);
-    xTaskCreatePinnedToCore(co2_task, "co2_task", 4096, NULL, 0, NULL, 1);
-
-    config_pins();
-    set_timer();
+    xTaskCreatePinnedToCore(main_task, "main_task", 5120, NULL, 0, NULL, 1); //Cria a task no APP CPU
 }
 
 
 void main_task(void *pvParameters)
 {
     begin_display();
-
+    config_pins();
+    set_timer();
+    begin_display();
+    static int loop_counter = 0;
     for(;;)
     {
-        D_set_cursor(0, 0);
-        static char msg[] = "daee parca";
-        uint8_t msg_size = (sizeof(msg)/sizeof(char));
-        D_write_str(&msg, msg_size);
-        vTaskDelay(pdMS_TO_TICKS(1000));
-        D_set_cursor(0, 1);
-        D_write_str(&msg, msg_size);
-        vTaskDelay(1000);
-        D_clear();
-    }
-}
-
-
-void temp_task(void *pvParameters)
-{
-    unsigned int t0;
-    for(;;)
-    {
+        loop_counter ++;
+        static char msg1[9];
+        static char msg2[16];
         dht_data data = get_temp_humity();
-        float co2_conc = get_co2_level();
-        t0 = esp_timer_get_time();
-        vTaskDelay(pdMS_TO_TICKS(100000));
-        send_data(((float)(data.temperature)), ((float)(data.humity)), co2_conc);
-        printf("Temp = %f, humity = %f\n", data.temperature, data.humity);
-    }
-}
+        float co2_lev = get_co2_level();
 
-
-void co2_task(void *pvParameters)
-{
-    unsigned int t0;
-    for(;;)
-    {
-        open_co2_valv();
-        fans_on();
+        printf("co2: %.1f temp: %.1f hum: %.1f\n", co2_lev, data.temperature, data.humity);
+        
+        sprintf(msg1, "CO2: %.1f", co2_lev);
+        sprintf(msg2, "T: %.1f H: %.1f", data.temperature, data.humity);
+        uint8_t msg1_size = (sizeof(msg1)/sizeof(char));
+        uint8_t msg2_size = (sizeof(msg2)/sizeof(char));
+        D_set_cursor(0, 0);
+        D_write_str(&msg1, msg1_size);
         vTaskDelay(pdMS_TO_TICKS(500));
-        get_co2_level();
-        close_co2_valv();
-        fans_off();
-        printf("time passed3\n");
+        D_set_cursor(0, 1);
+        D_write_str(&msg2, msg2_size);
         vTaskDelay(pdMS_TO_TICKS(500));
+        //D_clear();
+        
+        if(loop_counter > 120)
+        {
+            send_data(data.temperature, data.humity, co2_lev);
+            loop_counter = 0;
+        }
     }
 }
 
