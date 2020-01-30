@@ -3,6 +3,6 @@
 # project subdirectory.
 #
 
-PROJECT_NAME := myapp
+PROJECT_NAME := incubadora-co2
 include $(IDF_PATH)/make/project.mk
 

@@ -13,29 +13,10 @@
 #include "esp_crc.h"
 #include "esp_timer.h"
 #include "esp_log.h"
-#include "esp_wifi.h"
-#include "esp_wpa2.h"
-#include "freertos/event_groups.h"
 #include "esp_intr_alloc.h"
 #include "driver/gpio.h"
 #include "driver/adc.h"
-#include "tcpip_adapter.h"
-#include "lwip/sockets.h"
-#include "esp_http_client.h"
 
-
-//WIFI*********************************************************************************************
-/* The event group allows multiple bits for each event, but we only care about one event 
- * - are we connected to the AP with an IP? */
-const int WIFI_CONNECTED_BIT = BIT0;
-
-static const char *TAG = "wifi station";
-//SSID DO WIFI
-#define WIFI_SSID "Gardin"
-#define WIFI_PASSWD "gardin12a"
-
-//Número de vezes que tentará reconectar
-#define RECONECT_MAX_RETRY 1000000
 
 //PINOS
 #define INT_PIN 32
@@ -54,12 +35,6 @@ static const char *TAG = "wifi station";
 
 #define TIMER_GROUP TIMER_GROUP_0
 #define TIMER TIMER_0
-
-#define end_point "https://api.thingspeak.com/update?api_key=MMFBRWP4DEAR7FVR"
-static int s_retry_num = 0;
-
-/* FreeRTOS event group to signal when we are connected*/
-static EventGroupHandle_t s_wifi_event_group;
 
 //*******************************************************************************************************
 
@@ -100,16 +75,5 @@ esp_err_t fans_off(void);
 
 //Lê e retorna a concentração de CO2 em % pela porta analógica do arduino.
 float get_co2_level();
-
-
-//Conecta ao wifi.
-void wifi_init(void);
-
-//Envia os dados para o Thinspeak. < https://thingspeak.com/channels/731711 >
-void send_data(float temp, float humity, float co2);
-
-//Wifi event handler.
-static void event_handler(void* arg, esp_event_base_t event_base, 
-                                int32_t event_id, void* event_data);
 
 #endif
