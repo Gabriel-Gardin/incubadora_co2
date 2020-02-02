@@ -21,9 +21,9 @@
 //PINOS
 #define INT_PIN 32
 #define D1_PIN 33
-#define VALV_PIN 26
-#define FAN1 14
-#define FAN2 12
+#define VALV_PIN 12
+#define FAN1 26
+#define FAN2 14
 #define SCL 22
 #define SDA 21
 #define TEMP_DATA 19
@@ -72,8 +72,5 @@ esp_err_t fans_on(void);
 
 //Desliga as ventoinhas internas. GPIO 12 e 14
 esp_err_t fans_off(void);
-
-//Lê e retorna a concentração de CO2 em % pela porta analógica do arduino.
-float get_co2_level();
 
 #endif

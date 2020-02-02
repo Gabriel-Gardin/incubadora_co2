@@ -65,7 +65,7 @@ float get_co2_uart()
 //A calibragem é feita considerando que a [co2 ambiente] é igual a 400 ppm.
 void calibrate_zero()
 {
-    vTaskDelay(pdMS_TO_TICKS(60000)); //Espera 1 minuto para garantir que o modulo esteja "quente"?
+    vTaskDelay(pdMS_TO_TICKS(90000)); //Espera 1 minuto e meio para garantir que o modulo esteja "quente"?
     char rx_buffer[RX_BUF_SIZE] = {0};
     char command[] = {0xFF, 0x01, 0x87, 0x00, 0x00, 0x00, 0x00, 0x00, 0x78};
     const int txBytes = uart_write_bytes(UART_NUM_1, command, 9);

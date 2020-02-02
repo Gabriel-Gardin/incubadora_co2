@@ -9,7 +9,7 @@
 #include "wifi/wifi_functions.h"
 #include "co2_api/co2_lib.h"
 
-int dimmer_delay_us = 6000; //Faixa de tempo de 0 até 8333 uS;
+int dimmer_delay_us = 5000; //Faixa de tempo de 0 até 8333 uS;
 
 QueueHandle_t temp_queue; 
 
@@ -38,8 +38,8 @@ void main_task(void *pvParameters)
     begin_display();
     co2_init();
     
-    //calibrate_zero();
-    //off_self_calibration();
+  //  calibrate_zero();
+  //  off_self_calibration();
     
     static int loop_counter = 0;
     for(;;)
@@ -63,7 +63,7 @@ void main_task(void *pvParameters)
         vTaskDelay(pdMS_TO_TICKS(1000));
         //D_clear();
         
-        if(loop_counter > 60)
+        if(loop_counter > 20)
         {
             send_data(data.temperature, data.humity, co2_lev);
             loop_counter = 0;
@@ -84,33 +84,13 @@ void co2_task(void *pvParameters)
 {
     for(;;)
     {
+        fans_on();
         printf("co2_task\n");
-        vTaskDelay(pdMS_TO_TICKS(1000));
+        vTaskDelay(pdMS_TO_TICKS(600));
+        fans_off();
+        vTaskDelay(pdMS_TO_TICKS(2000));
     }
 }
-
-float get_co2_level()
-{
-    int val = 0;
-    float voltage;
-    float co2_conc;
-
-    adc1_config_width(ADC_WIDTH_BIT_12);
-    adc1_config_channel_atten(CO2_ANALOG_PIN, ADC_ATTEN_DB_6); //Atenuação de 6dB. Leituras de 0 até 2.2V; Equivale a 0 - 4096.
-    for(int i = 0; i < 15; i++)
-    {
-        val += adc1_get_raw(CO2_ANALOG_PIN);
-        ets_delay_us(1);
-    }
-    
-    val = val/15; //Tira a média de 15 leituras do ADC.
-    voltage = ((val * 2.2) / 4095) - 0.130;  //Subtrai um valor empirico, próximo ao erro do ADC.
-    //printf("Read voltage is = %f\n", voltage);
-    
-    co2_conc =  ((voltage - 0.4) * 10) / 1.6;
-    return co2_conc;
-}
-
 
 esp_err_t open_co2_valv(void)
 {
