@@ -4,6 +4,9 @@
         "esp_log.h": "c",
         "esp_bt.h": "c",
         "liquidcrystali2c.h": "c",
-        "dht22.h": "c"
+        "dht22.h": "c",
+        "array": "c",
+        "string": "c",
+        "string_view": "c"
     }
 }

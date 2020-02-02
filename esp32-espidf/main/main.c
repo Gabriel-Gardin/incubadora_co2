@@ -3,59 +3,67 @@
 / O código consiste em três tasks, uma geral chamada de main_task, outra para controle do co2 e outra para o controle da temepratura.
 / 
 */
-#include "dht22.h"
-#include "liquidCrystalI2C.h"
+#include "dht22/dht22.h"
+#include "lcd_display/liquidCrystalI2C.h"
 #include "definitions.h"
-#include "wifi_functions.h"
+#include "wifi/wifi_functions.h"
+#include "co2_api/co2_lib.h"
 
-int dimmer_delay_us = 6000;
+int dimmer_delay_us = 6000; //Faixa de tempo de 0 até 8333 uS;
 
-QueueHandle_t temp_queue;
+QueueHandle_t temp_queue; 
 
 void app_main(void)
 {
-    esp_err_t ret = nvs_flash_init();
-
+    //vTaskDelay(pdMS_TO_TICKS(1000)); //Pausa 10 segundos para iniciar o sensor...
+    esp_err_t ret = nvs_flash_init(); //Inicia a memória flash, usado pelo wifi...
     if (ret == ESP_ERR_NVS_NO_FREE_PAGES || ret == ESP_ERR_NVS_NEW_VERSION_FOUND) {
       ESP_ERROR_CHECK(nvs_flash_erase());
       ret = nvs_flash_init();
     }
     ESP_ERROR_CHECK(ret);
+
     wifi_init();
-    xTaskCreatePinnedToCore(main_task, "main_task", 5120, NULL, 0, NULL, 1); //Cria a task no APP CPU
+    xTaskCreatePinnedToCore(main_task, "main_task", 4096, NULL, 0, NULL, 1); //Cria a task no APP CPU
+    xTaskCreatePinnedToCore(temp_task, "temp_task", 4096, NULL, 0, NULL, 1); //Cria a task no APP CPU
+    xTaskCreatePinnedToCore(co2_task, "co2_task", 4096, NULL, 0, NULL, 1); //Cria a task no APP CPU
 }
 
-
+//Inicia todos os periféricos e mantém o dispal atualizado.
 void main_task(void *pvParameters)
 {
     begin_display();
     config_pins();
     set_timer();
     begin_display();
+    co2_init();
+    
+    //calibrate_zero();
+    //off_self_calibration();
+    
     static int loop_counter = 0;
     for(;;)
     {
         loop_counter ++;
-        static char msg1[9];
+        static char msg1[10];
         static char msg2[16];
         dht_data data = get_temp_humity();
-        float co2_lev = get_co2_level();
+        float co2_lev = get_co2_uart()/10000; //Passa de parte por milhão para %.
 
-        printf("co2: %.1f temp: %.1f hum: %.1f\n", co2_lev, data.temperature, data.humity);
-        
-        sprintf(msg1, "CO2: %.1f", co2_lev);
+        printf("co2: %f temp: %.1f hum: %.1f\n", co2_lev*10000, data.temperature, data.humity);
+        sprintf(msg1, "CO2: %.2f", co2_lev);
         sprintf(msg2, "T: %.1f H: %.1f", data.temperature, data.humity);
         uint8_t msg1_size = (sizeof(msg1)/sizeof(char));
         uint8_t msg2_size = (sizeof(msg2)/sizeof(char));
         D_set_cursor(0, 0);
         D_write_str(&msg1, msg1_size);
-        vTaskDelay(pdMS_TO_TICKS(500));
+        vTaskDelay(pdMS_TO_TICKS(1000));
         D_set_cursor(0, 1);
         D_write_str(&msg2, msg2_size);
-        vTaskDelay(pdMS_TO_TICKS(500));
+        vTaskDelay(pdMS_TO_TICKS(1000));
         //D_clear();
         
-        if(loop_counter > 120)
+        if(loop_counter > 60)
         {
             send_data(data.temperature, data.humity, co2_lev);
             loop_counter = 0;
@@ -63,6 +71,23 @@ void main_task(void *pvParameters)
     }
 }
 
+void temp_task(void *pvParameters)
+{
+    for(;;)
+    {
+        printf("Temp task\n");
+        vTaskDelay(pdMS_TO_TICKS(1000));
+    }
+}
+
+void co2_task(void *pvParameters)
+{
+    for(;;)
+    {
+        printf("co2_task\n");
+        vTaskDelay(pdMS_TO_TICKS(1000));
+    }
+}
 
 float get_co2_level()
 {
