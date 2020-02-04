@@ -64,8 +64,8 @@ dht_data get_temp_humity()
     if(checksum != check)
     {
         //printf("checksum error!!! %i, %i\n", check, checksum);
-        data.temperature = 0;
-        data.humity = 0;
+        data.temperature = 333.333;
+        data.humity = 333.333;
         return data;
     }
     

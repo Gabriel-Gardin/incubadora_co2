@@ -36,6 +36,11 @@
 #define TIMER_GROUP TIMER_GROUP_0
 #define TIMER TIMER_0
 
+#define POINT_TEMP 37.0
+#define TEMP_FACTOR 2
+
+#define CO2_LEVEL 5.0
+#define CO2_CONST 1700
 //*******************************************************************************************************
 
 timer_config_t config;

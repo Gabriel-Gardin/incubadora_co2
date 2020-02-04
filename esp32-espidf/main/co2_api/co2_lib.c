@@ -56,7 +56,7 @@ float get_co2_uart()
     }
     else
     {
-        return 0;
+        return 333.333;
     }
 }
 

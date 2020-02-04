@@ -22,7 +22,7 @@
 void wifi_init(void);
 
 //Envia os dados para o Thinspeak. < https://thingspeak.com/channels/731711 >
-void send_data(float temp, float humity, float co2);
+void send_data(float temp, float humity, float co2, int delay_us);
 
 //Wifi event handler.
 static void event_handler(void* arg, esp_event_base_t event_base, 

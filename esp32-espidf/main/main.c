@@ -8,10 +8,14 @@
 #include "definitions.h"
 #include "wifi/wifi_functions.h"
 #include "co2_api/co2_lib.h"
+#include "math.h"
 
-int dimmer_delay_us = 5000; //Faixa de tempo de 0 até 8333 uS;
+IRAM_ATTR int dimmer_delay_us = 5000; //Faixa de tempo de 0 até 7500 uS;
 
-QueueHandle_t temp_queue; 
+TaskHandle_t temp_task_handle;
+TaskHandle_t co2_task_handle;
+QueueHandle_t temp_queue;
+QueueHandle_t co2_queue;
 
 void app_main(void)
 {
@@ -24,9 +28,11 @@ void app_main(void)
     ESP_ERROR_CHECK(ret);
 
     wifi_init();
-    xTaskCreatePinnedToCore(main_task, "main_task", 4096, NULL, 0, NULL, 1); //Cria a task no APP CPU
-    xTaskCreatePinnedToCore(temp_task, "temp_task", 4096, NULL, 0, NULL, 1); //Cria a task no APP CPU
-    xTaskCreatePinnedToCore(co2_task, "co2_task", 4096, NULL, 0, NULL, 1); //Cria a task no APP CPU
+    xTaskCreatePinnedToCore(main_task, "main_task", 4096, NULL, 1, NULL, 1); //Cria a task no APP CPU
+    xTaskCreatePinnedToCore(temp_task, "temp_task", 4096, NULL, 0, temp_task_handle, 1); //Cria a task no APP CPU
+    xTaskCreatePinnedToCore(co2_task, "co2_task", 4096, NULL, 0, co2_task_handle, 1); //Cria a task no APP CPU
+    temp_queue = xQueueCreate(1, sizeof(float));
+    co2_queue = xQueueCreate(1, sizeof(float));
 }
 
 //Inicia todos os periféricos e mantém o dispal atualizado.
@@ -47,48 +53,163 @@ void main_task(void *pvParameters)
         loop_counter ++;
         static char msg1[10];
         static char msg2[16];
-        dht_data data = get_temp_humity();
-        float co2_lev = get_co2_uart()/10000; //Passa de parte por milhão para %.
 
-        printf("co2: %f temp: %.1f hum: %.1f\n", co2_lev*10000, data.temperature, data.humity);
-        sprintf(msg1, "CO2: %.2f", co2_lev);
-        sprintf(msg2, "T: %.1f H: %.1f", data.temperature, data.humity);
-        uint8_t msg1_size = (sizeof(msg1)/sizeof(char));
-        uint8_t msg2_size = (sizeof(msg2)/sizeof(char));
-        D_set_cursor(0, 0);
-        D_write_str(&msg1, msg1_size);
-        vTaskDelay(pdMS_TO_TICKS(1000));
-        D_set_cursor(0, 1);
-        D_write_str(&msg2, msg2_size);
-        vTaskDelay(pdMS_TO_TICKS(1000));
-        //D_clear();
-        
-        if(loop_counter > 20)
+        dht_data data = get_temp_humity();    
+        float co2_lev = get_co2_uart()/10000; //Passa de parte por milhão para %.
+        if((data.temperature != 333.333) && (co2_lev != 333.333))
         {
-            send_data(data.temperature, data.humity, co2_lev);
-            loop_counter = 0;
+            printf("co2: %f temp: %.1f hum: %.1f\n", co2_lev*10000, data.temperature, data.humity);
+            
+            sprintf(msg1, "CO2: %.2f", co2_lev);
+            sprintf(msg2, "T: %.1f H: %.1f", data.temperature, data.humity);
+            
+            uint8_t msg1_size = (sizeof(msg1)/sizeof(char));
+            uint8_t msg2_size = (sizeof(msg2)/sizeof(char));
+            
+            D_set_cursor(0, 0);
+            D_write_str(&msg1, msg1_size);
+            
+            vTaskDelay(pdMS_TO_TICKS(1000));
+            
+            D_set_cursor(0, 1);
+            D_write_str(&msg2, msg2_size);
+            
+            vTaskDelay(pdMS_TO_TICKS(1000));
+            //D_clear();
+            
+            float temperatura = (float)data.temperature;
+            xQueueOverwrite(co2_queue, &co2_lev);
+            xQueueOverwrite(temp_queue, &temperatura); //Envia os dados para a temp_queue. Evita muitos acessos ao modulo RMT do dht22.
+            
+            if(loop_counter > 25)
+            {
+                send_data(data.temperature, data.humity, co2_lev, dimmer_delay_us);
+                loop_counter = 0;
+            }
         }
+            
     }
 }
 
 void temp_task(void *pvParameters)
 {
+    float temp_set_point = POINT_TEMP;
+    int temp_factor = TEMP_FACTOR;
+    float temp_task = 0;
+    float delta_t = 0;
+    bool was_zeroed = 0;
+
     for(;;)
     {
-        printf("Temp task\n");
-        vTaskDelay(pdMS_TO_TICKS(1000));
+        BaseType_t ret = xQueueReceive(temp_queue, &temp_task, pdMS_TO_TICKS(1000));       
+        if(ret == pdPASS)
+        {
+            delta_t = temp_task - temp_set_point;
+        
+
+            if((delta_t >= -0.1) && (delta_t <= 0.1))  //Se a diferença de temp está entre -0.1 e -0.1 mantem a taxa de aqueciemnto.
+            {
+                if(was_zeroed)
+                {
+                    dimmer_delay_us = 5000;
+                    was_zeroed = false;
+                    vTaskDelay(pdMS_TO_TICKS(80000));
+                }
+                else
+                {
+                    vTaskDelay(pdMS_TO_TICKS(80000));   
+                }
+                
+            }
+
+            else if((delta_t < -0.1) && (dimmer_delay_us > 100) && (dimmer_delay_us <= 7500))  //Se a diferença de temp é menor que -0.1 aumenta a potencia.
+            {
+                if(was_zeroed)
+                {
+                    dimmer_delay_us = 5000;
+                    was_zeroed = false;
+                    vTaskDelay(pdMS_TO_TICKS(80000));
+                }
+                else
+                {
+                    dimmer_delay_us -= ((delta_t * delta_t) * temp_factor);
+                    if(dimmer_delay_us < 200)
+                    {
+                        dimmer_delay_us = 200;
+                    }
+                    printf("aumentando a temp dimmer delay = %i\n", dimmer_delay_us);
+                    vTaskDelay(pdMS_TO_TICKS(80000));
+                }
+            }
+            //Mudar delta_t > 0.4
+            else if((delta_t > 0.1) && (dimmer_delay_us > 100) && (dimmer_delay_us <= 7500)) //Se a diferença de temp é maior que 0.2 desliga o aquecimento. Inercia terminca
+            {
+                was_zeroed = true;
+                dimmer_delay_us = 7500; //Se a temperatura passar do limite desliga o aquecimento.
+                printf("diminuindo a temp dimmer delay = %i\n", dimmer_delay_us);
+                vTaskDelay(pdMS_TO_TICKS(80000));
+            }
+
+            else if((delta_t > 0.1) && (dimmer_delay_us > 100) && (dimmer_delay_us <= 7500)) //Se a diferença de temp é maior que 0.2 desliga o aquecimento. Inercia terminca
+            {
+                if(was_zeroed)
+                {
+                    dimmer_delay_us = 5000;
+                    was_zeroed = false;
+                    vTaskDelay(pdMS_TO_TICKS(80000));
+                }
+                else
+                {
+                    dimmer_delay_us += ((delta_t * delta_t) * temp_factor); //Se a temperatura passar do limite desliga o aquecimento.
+                    if(dimmer_delay_us > 7500)
+                    {
+                        dimmer_delay_us = 7500;
+                    }
+                    printf("diminuindo a temp dimmer delay = %i\n", dimmer_delay_us);
+                    vTaskDelay(pdMS_TO_TICKS(80000));   
+                }
+            }
+        }
     }
 }
 
 void co2_task(void *pvParameters)
 {
+    int co2_constant = CO2_CONST;
+    float configured_co2 = CO2_LEVEL;
+    float delta_co2 = 0;
     for(;;)
     {
-        fans_on();
-        printf("co2_task\n");
-        vTaskDelay(pdMS_TO_TICKS(600));
-        fans_off();
-        vTaskDelay(pdMS_TO_TICKS(2000));
+        float co2_level = 0;
+        BaseType_t ret = xQueueReceive(co2_queue, &co2_level, pdMS_TO_TICKS(1000));
+        if(ret == pdPASS)
+        {            
+            delta_co2 = co2_level - configured_co2;
+
+        if(delta_co2 > -0.02 && delta_co2 < 0.02)
+        {
+            vTaskDelay(pdMS_TO_TICKS(2000));
+        }
+
+        else if(delta_co2 > 0.03)
+        {
+            fans_on();
+            vTaskDelay(pdMS_TO_TICKS(1500));
+            fans_off();
+        }
+
+        else if(delta_co2 < -0.02)
+        {
+            int open_valv_time = abs(delta_co2 * co2_constant);
+            open_co2_valv();
+            vTaskDelay(pdMS_TO_TICKS(open_valv_time));
+            close_co2_valv();
+            fans_on();
+            vTaskDelay(pdMS_TO_TICKS(400));
+            fans_off();
+            vTaskDelay(1000);
+            }
+        }
     }
 }
 
