@@ -13,11 +13,11 @@ static int s_retry_num = 0;
 static EventGroupHandle_t s_wifi_event_group;
 
 
-void send_data(float temp, float humity, float co2, int delay_us)
+void send_data(float temp, float humity, float co2, int delay_us, float var_temp)
 {
 
-    char url[125];
-    sprintf(url, "https://api.thingspeak.com/update?api_key=MMFBRWP4DEAR7FVR&field1=%f&field2=%f&field3=%f&field4=%i", co2, temp, humity, delay_us);
+    char url[140];
+    sprintf(url, "https://api.thingspeak.com/update?api_key=MMFBRWP4DEAR7FVR&field1=%f&field2=%f&field3=%f&field4=%i&field5=%f", co2, temp, humity, delay_us, var_temp);
 
     esp_http_client_config_t config = {
         .url =  url,
