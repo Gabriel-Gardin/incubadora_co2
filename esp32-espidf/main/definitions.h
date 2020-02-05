@@ -41,6 +41,10 @@
 
 #define CO2_LEVEL 5.0
 #define CO2_CONST 1700
+
+#define T_BUFFER_SIZE 3
+#define DELAY_GOOD_VALUE 6100
+#define T_DELAY 30000
 //*******************************************************************************************************
 
 timer_config_t config;
