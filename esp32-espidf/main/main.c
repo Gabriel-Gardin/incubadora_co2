@@ -91,6 +91,7 @@ void main_task(void *pvParameters)
             {
                 temperatura = temperatura / 3;
                 xQueueOverwrite(temp_queue, &temperatura); //Envia os dados para a temp_queue. Evita muitos acessos ao modulo RMT do dht22.
+                temperatura = 0;
                 temp_counter = 0;
             
             }
@@ -123,7 +124,7 @@ void temp_task(void *pvParameters)
 
     for(;;)
     {
-        printf("derivada %.2f, proportional %.2f, dimmer_delay%i\n",(derivada), (erro), dimmer_delay_us);
+        printf("derivada %.2f, proportional %.2f, dimmer_delay%i, temp0 %f\n",(derivada), (erro), dimmer_delay_us, temp0_task);
         //printf("dimmer_delay %i\n", dimmer_delay_us);
 
         BaseType_t ret = xQueueReceive(temp_queue, &temp0_task, pdMS_TO_TICKS(1000));       
@@ -134,6 +135,7 @@ void temp_task(void *pvParameters)
                 if(temp0_task <= 33.0)
                 {
                     dimmer_delay_us = 2000;
+                    temp1_task = temp0_task;
                 //    vTaskDelay(pdMS_TO_TICKS(delay_time/3));
                 }
                 else
