@@ -10,7 +10,7 @@
 #include "co2_api/co2_lib.h"
 #include "math.h"
 
-IRAM_ATTR int dimmer_delay_us = 5000; //Faixa de tempo de 0 até 7500 uS;
+IRAM_ATTR int dimmer_delay_us = 3000; //Faixa de tempo de 0 até 7500 uS;
 
 float var_temp = 0;
 
@@ -83,7 +83,7 @@ void main_task(void *pvParameters)
             xQueueOverwrite(co2_queue, &co2_lev);
             xQueueOverwrite(temp_queue, &temperatura); //Envia os dados para a temp_queue. Evita muitos acessos ao modulo RMT do dht22.
             
-            if(loop_counter > 25)
+            if(loop_counter > 35)
             {
                 send_data(data.temperature, data.humity, co2_lev, dimmer_delay_us, var_temp);
                 loop_counter = 0;
@@ -93,180 +93,107 @@ void main_task(void *pvParameters)
     }
 }
 
+//Responsável pelo controle da temperatura.
+//Recebe a temperatura por uma queue da main_task.
 void temp_task(void *pvParameters)
 {
+    float erro = 0;
+    float derivada = 0;
+
+    float temp0_task = 0;
+    float temp1_task = 0;
+    
     float temp_set_point = POINT_TEMP;
-    int temp_factor = TEMP_FACTOR;
-    float temp_task = 0;
-    float temp_buffer[T_BUFFER_SIZE] = {0};
-    float delta_t = 0;
-    bool was_zeroed = 0;
-    int counter = 0;
-    int good_value = DELAY_GOOD_VALUE;
-    int delay_ms = T_DELAY;
+
+    int good_value = 6000;
+
+    int delay_time = 180000; //Milisegundos. 
+
+    bool first_run = 1;
 
     for(;;)
     {
-        printf("dimmer delay = %i\n", dimmer_delay_us);
-        printf("var_temp = %.2f\n", var_temp);
-        printf("delta_t = %.2f\n", delta_t);
+        printf("derivada %.2f, proportional %.2f, dimmer_delay%i\n",(derivada), (erro), dimmer_delay_us);
+        //printf("dimmer_delay %i\n", dimmer_delay_us);
 
-        BaseType_t ret = xQueueReceive(temp_queue, &temp_task, pdMS_TO_TICKS(1000));       
+        BaseType_t ret = xQueueReceive(temp_queue, &temp0_task, pdMS_TO_TICKS(1000));       
         if(ret == pdPASS)
         {
-            delta_t = temp_task - temp_set_point;
-
-            if(counter < T_BUFFER_SIZE)
+            if(first_run) //Se acabou de ligar pré aquece a estufa.
             {
-                temp_buffer[counter] = temp_task;
-                counter++;
-            } 
-            if(counter == T_BUFFER_SIZE)
-            {
-                //counter = 0;
-                for(int i = T_BUFFER_SIZE - 1; i > 0; i--)
+                if(temp0_task <= 33.6)
                 {
-                    var_temp = temp_buffer[i] - temp_buffer[i-1];
+                    dimmer_delay_us = 2000;
+                //    vTaskDelay(pdMS_TO_TICKS(delay_time/3));
                 }
-                var_temp = var_temp / T_BUFFER_SIZE - 1; //Variação em grau celsius por loop da task. Derivada.
-                counter = 10;
+                else
+                {
+                    first_run = 0;
+                    erro = temp0_task - temp_set_point;
+                    derivada = 0;
+                    temp1_task = temp0_task;
+                    dimmer_delay_us = 6100;
+                    var_temp = derivada;
+                    vTaskDelay(pdMS_TO_TICKS(delay_time * 3));
+                }
             }
-            
-            if(counter == 10) //Se counter igual a 10 significa que o buffer já está cheio!. A partir de agora usar como uma queue
+
+            else if(temp0_task == temp_set_point) //Três condições distintas do PID. t > 0, t < 0 t == 0; 
             {
-                for(int i = T_BUFFER_SIZE - 1; i > 1; i--)
-                {
-                    temp_buffer[i - 1] = temp_buffer[i]; //Desloca os elementos da lista para esquerda. Libera o ultimo espaço do array
-                }
-                temp_buffer[T_BUFFER_SIZE - 1] = temp_task;
+                int Kd = 700;
+                int Kp = 30;
+
+                erro = temp0_task - temp_set_point;
+                derivada = temp0_task - temp1_task;
+                temp1_task = temp0_task;
+
+                dimmer_delay_us += (derivada * Kd) + (Kp * erro);
                 
-                for(int i = T_BUFFER_SIZE - 1; i > 0; i--)
-                {
-                    var_temp = temp_buffer[i] - temp_buffer[i-1];
-                }
-                var_temp = var_temp / (T_BUFFER_SIZE - 1); //Variação em grau celsius por loop da task. Derivada.
-            }
-            
-            if((delta_t > -0.1) && (delta_t < 0.1))  //Se a diferença de temp está entre -0.1 e -0.1 mantem a taxa de aqueciemnto.
-            {
-                if((var_temp >= -0.1) && (var_temp <= 0.1))
-                {
-                    vTaskDelay(pdMS_TO_TICKS(delay_ms));
-                }
+                var_temp = derivada;
 
-                else if(var_temp <= -0.3)
-                {
-                    dimmer_delay_us -= 10 * ((delta_t * delta_t) * temp_factor);
-                    vTaskDelay(pdMS_TO_TICKS(delay_ms));
-                }
+                if(dimmer_delay_us > 7000){dimmer_delay_us = 7000;}
+                else if(dimmer_delay_us < 3000){dimmer_delay_us = 3000;}
 
-                else if(var_temp >= 0.3)
-                {
-                    dimmer_delay_us = good_value;
-                    vTaskDelay(pdMS_TO_TICKS(delay_ms));
-                }
-
-                else if(var_temp >= 0.1)
-                {
-                    dimmer_delay_us += ((delta_t * delta_t) * temp_factor);
-                    vTaskDelay(pdMS_TO_TICKS(delay_ms));
-                }
+                vTaskDelay(pdMS_TO_TICKS(delay_time)); 
             }
 
-            else if(delta_t <= -3.0)
+            else if(temp0_task > temp_set_point)
             {
-                printf("é menor que -3.0\n");
-                if((var_temp >= 0) && (var_temp <= 0.3))
-                {
-                    dimmer_delay_us -= ((delta_t * delta_t) * temp_factor);
-                    if(dimmer_delay_us < 200){dimmer_delay_us = 200;}
-                    vTaskDelay(pdMS_TO_TICKS(delay_ms));
-                }
+                int Kd = 800; 
+                int Kp = 70;
 
-                else if(var_temp < 0)
-                {
-                    dimmer_delay_us -= 5 * ((delta_t * delta_t) * temp_factor);
-                    if(dimmer_delay_us < 200){dimmer_delay_us = 200;}
-                    vTaskDelay(pdMS_TO_TICKS(delay_ms));
-                }
+                erro = temp0_task - temp_set_point;
+                derivada = temp0_task - temp1_task;
+                temp1_task = temp0_task;
 
-                else if(var_temp >= 1.5)
-                {
-                    vTaskDelay(pdMS_TO_TICKS(delay_ms));
-                }
+                dimmer_delay_us += (derivada * Kd) + (Kp * erro);
+                
+                var_temp = derivada;
+
+                if(dimmer_delay_us > 7000){dimmer_delay_us = 7000;}
+                else if(dimmer_delay_us < 3000){dimmer_delay_us = 3000;}
+
+                vTaskDelay(pdMS_TO_TICKS(delay_time)); 
             }
 
-            else if(delta_t <= -1.5)  //Se a diferença de temp é menor que -0.1 aumenta a potencia.
+            else if(temp0_task < temp_set_point)
             {
-                printf("é menor que -1.5\n");
-                if((var_temp >= 0) && (var_temp <= 1.0))
-                {
-                    dimmer_delay_us -= ((delta_t * delta_t) * temp_factor);
-                    if(dimmer_delay_us < 200){dimmer_delay_us = 200;}
-                    vTaskDelay(pdMS_TO_TICKS(delay_ms));
-                }
+                int Kd = 550;
+                int Kp = 50;
 
-                else if(var_temp < 0)
-                {
-                    dimmer_delay_us -= 7 *((delta_t * delta_t) * temp_factor);
-                    if(dimmer_delay_us < 200){dimmer_delay_us = 200;}
-                    vTaskDelay(pdMS_TO_TICKS(delay_ms));
-                }
+                erro = temp0_task - temp_set_point;
+                derivada = temp0_task - temp1_task;
+                temp1_task = temp0_task;
 
-                else if(var_temp >= 2.0)
-                {
-                    dimmer_delay_us = good_value;
-                    vTaskDelay(pdMS_TO_TICKS(delay_ms));
-                }
-            }
+                dimmer_delay_us += (derivada * Kd) + (Kp * erro);
+                
+                var_temp = derivada;
 
-            else if(delta_t <= -0.1)  //Se a diferença de temp é menor que -0.1 aumenta a potencia.
-            {
-                printf("é menor que -0.1\n");
-                if((var_temp >= -0.1) && (var_temp < 0.1))
-                {
-                    dimmer_delay_us -= ((delta_t * delta_t) * temp_factor);
-                    if(dimmer_delay_us < 200){dimmer_delay_us = 200;}
-                    vTaskDelay(pdMS_TO_TICKS(delay_ms));
-                }
-                else if(var_temp <= -0.1)
-                {
-                    dimmer_delay_us -= 10 *((delta_t * delta_t) * temp_factor);
-                    if(dimmer_delay_us < 200){dimmer_delay_us = 200;}
-                    vTaskDelay(pdMS_TO_TICKS(delay_ms));
-                }
-                else if(var_temp >= 0.3)
-                {
-                    dimmer_delay_us = good_value;
-                    vTaskDelay(pdMS_TO_TICKS(delay_ms));
-                }
+                if(dimmer_delay_us > 7000){dimmer_delay_us = 7000;}
+                else if(dimmer_delay_us < 3000){dimmer_delay_us = 3000;}
+
+                vTaskDelay(pdMS_TO_TICKS(delay_time)); 
             }  
-
-            else if(delta_t >= 0.1) //Se a diferença de temp é maior que 0.1 desliga o aquecimento. Inercia terminca
-            {
-                if((var_temp > -0.2) && (var_temp < 0))
-                {
-                    dimmer_delay_us += ((delta_t * delta_t) * temp_factor);
-                    if(dimmer_delay_us > 7500){dimmer_delay_us = 7500;}
-                    vTaskDelay(pdMS_TO_TICKS(delay_ms));
-                }
-                else if(var_temp < -0.2)
-                {
-                    vTaskDelay(pdMS_TO_TICKS(delay_ms));
-                }
-                else if(var_temp > 0.2)
-                {
-                    dimmer_delay_us = good_value;
-                    vTaskDelay(pdMS_TO_TICKS(delay_ms));
-                }
-
-                else if(var_temp > 0.1)
-                {
-                    dimmer_delay_us += 10 * abs((delta_t * delta_t) * temp_factor);
-                    if(dimmer_delay_us > 7500){dimmer_delay_us = 7500;}
-                    vTaskDelay(pdMS_TO_TICKS(delay_ms));
-                }
-            }
         }
     }
 }
