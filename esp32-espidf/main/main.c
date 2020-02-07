@@ -50,6 +50,9 @@ void main_task(void *pvParameters)
   //  off_self_calibration();
     
     static int loop_counter = 0;
+    float temperatura = 0;
+    int temp_counter = 0;
+
     for(;;)
     {
         loop_counter ++;
@@ -58,6 +61,7 @@ void main_task(void *pvParameters)
 
         dht_data data = get_temp_humity();    
         float co2_lev = get_co2_uart()/10000; //Passa de parte por milhão para %.
+
         if((data.temperature != 333.333) && (co2_lev != 333.333))
         {
             printf("co2: %f temp: %.1f hum: %.1f\n", co2_lev*10000, data.temperature, data.humity);
@@ -79,9 +83,17 @@ void main_task(void *pvParameters)
             vTaskDelay(pdMS_TO_TICKS(1000));
             //D_clear();
             
-            float temperatura = (float)data.temperature;
             xQueueOverwrite(co2_queue, &co2_lev);
-            xQueueOverwrite(temp_queue, &temperatura); //Envia os dados para a temp_queue. Evita muitos acessos ao modulo RMT do dht22.
+            temp_counter ++;
+            temperatura += (float)data.temperature;
+
+            if(temp_counter == 3)
+            {
+                temperatura = temperatura / 3;
+                xQueueOverwrite(temp_queue, &temperatura); //Envia os dados para a temp_queue. Evita muitos acessos ao modulo RMT do dht22.
+                temp_counter = 0;
+            
+            }
             
             if(loop_counter > 35)
             {
@@ -105,8 +117,6 @@ void temp_task(void *pvParameters)
     
     float temp_set_point = POINT_TEMP;
 
-    int good_value = 6000;
-
     int delay_time = 180000; //Milisegundos. 
 
     bool first_run = 1;
@@ -128,13 +138,13 @@ void temp_task(void *pvParameters)
                 }
                 else
                 {
+                    dimmer_delay_us = 6100;
+                    vTaskDelay(pdMS_TO_TICKS(delay_time * 3));
                     first_run = 0;
-                    erro = temp0_task - temp_set_point;
+                    erro = 0;
                     derivada = 0;
                     temp1_task = temp0_task;
-                    dimmer_delay_us = 6100;
                     var_temp = derivada;
-                    vTaskDelay(pdMS_TO_TICKS(delay_time * 3));
                 }
             }
 
