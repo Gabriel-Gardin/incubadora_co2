@@ -129,7 +129,7 @@ void temp_task(void *pvParameters)
         {
             if(first_run) //Se acabou de ligar pré aquece a estufa.
             {
-                if(temp0_task <= 33.0)
+                if(temp0_task <= 33.5)
                 {
                     dimmer_delay_us = 2000;
                     temp1_task = temp0_task;
@@ -137,7 +137,7 @@ void temp_task(void *pvParameters)
                 }
                 else
                 {
-                    dimmer_delay_us = 6100;
+                    dimmer_delay_us = 5400;
                     vTaskDelay(pdMS_TO_TICKS(delay_time * 3));
                     first_run = 0;
                     erro = 0;
