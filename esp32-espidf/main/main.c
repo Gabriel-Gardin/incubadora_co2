@@ -46,9 +46,6 @@ void main_task(void *pvParameters)
     begin_display();
     co2_init();
     
-  //  calibrate_zero();
-  //  off_self_calibration();
-    
     static int loop_counter = 0;
     float temperatura = 0;
     int temp_counter = 0;
