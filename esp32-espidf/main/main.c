@@ -93,9 +93,9 @@ void main_task(void *pvParameters)
             
             }
             
-            if(loop_counter > 35)
+            if(loop_counter > 40)
             {
-                send_data(data.temperature, data.humity, co2_lev, dimmer_delay_us, var_temp);
+                send_data(data.temperature, data.humity, co2_lev, dimmer_delay_us);
                 loop_counter = 0;
             }
         }
